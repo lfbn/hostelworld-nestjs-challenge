@@ -1,35 +1,38 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RecordController } from './record.controller';
-import { getModelToken } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Record } from '../schemas/record.schema';
+import { RecordService } from '../services/record.service';
 import { CreateRecordRequestDTO } from '../dtos/create-record.request.dto';
 import { RecordCategory, RecordFormat } from '../schemas/record.enum';
 
 describe('RecordController', () => {
   let recordController: RecordController;
-  let recordModel: Model<Record>;
+  let recordService: RecordService;
+
+  const mockRecordService = {
+    create: jest.fn(),
+    update: jest.fn(),
+    findAll: jest.fn(),
+    findById: jest.fn(),
+    delete: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RecordController],
       providers: [
         {
-          provide: getModelToken('Record'),
-          useValue: {
-            new: jest.fn().mockResolvedValue({}),
-            constructor: jest.fn().mockResolvedValue({}),
-            find: jest.fn(),
-            findById: jest.fn(),
-            save: jest.fn(),
-            create: jest.fn(),
-          },
+          provide: RecordService,
+          useValue: mockRecordService,
         },
       ],
     }).compile();
 
     recordController = module.get<RecordController>(RecordController);
-    recordModel = module.get<Model<Record>>(getModelToken('Record'));
+    recordService = module.get<RecordService>(RecordService);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   it('should create a new record', async () => {
@@ -44,37 +47,75 @@ describe('RecordController', () => {
 
     const savedRecord = {
       _id: '1',
-      name: 'Test Record',
+      ...createRecordDto,
+      tracklist: [],
+    };
+
+    mockRecordService.create.mockResolvedValue(savedRecord);
+
+    const result = await recordController.create(createRecordDto);
+    expect(result).toEqual(savedRecord);
+    expect(mockRecordService.create).toHaveBeenCalledWith(createRecordDto);
+  });
+
+  it('should return paginated records', async () => {
+    const paginatedResponse = {
+      data: [
+        { _id: '1', artist: 'Artist 1', album: 'Album 1', price: 100, qty: 10 },
+        { _id: '2', artist: 'Artist 2', album: 'Album 2', price: 200, qty: 20 },
+      ],
+      meta: {
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      },
+    };
+
+    mockRecordService.findAll.mockResolvedValue(paginatedResponse);
+
+    const result = await recordController.findAll();
+    expect(result).toEqual(paginatedResponse);
+    expect(mockRecordService.findAll).toHaveBeenCalled();
+  });
+
+  it('should return a record by ID', async () => {
+    const record = {
+      _id: '1',
+      artist: 'Test Artist',
+      album: 'Test Album',
       price: 100,
       qty: 10,
     };
 
-    jest.spyOn(recordModel, 'create').mockResolvedValue(savedRecord as any);
+    mockRecordService.findById.mockResolvedValue(record);
 
-    const result = await recordController.create(createRecordDto);
-    expect(result).toEqual(savedRecord);
-    expect(recordModel.create).toHaveBeenCalledWith({
-      artist: 'Test',
-      album: 'Test Record',
-      price: 100,
-      qty: 10,
-      category: RecordCategory.ALTERNATIVE,
-      format: RecordFormat.VINYL,
-    });
+    const result = await recordController.findById('1');
+    expect(result).toEqual(record);
+    expect(mockRecordService.findById).toHaveBeenCalledWith('1');
   });
 
-  it('should return an array of records', async () => {
-    const records = [
-      { _id: '1', name: 'Record 1', price: 100, qty: 10 },
-      { _id: '2', name: 'Record 2', price: 200, qty: 20 },
-    ];
+  it('should update a record', async () => {
+    const updateDto = { price: 150 };
+    const updatedRecord = {
+      _id: '1',
+      artist: 'Test Artist',
+      album: 'Test Album',
+      price: 150,
+      qty: 10,
+    };
 
-    jest.spyOn(recordModel, 'find').mockReturnValue({
-      exec: jest.fn().mockResolvedValue(records),
-    } as any);
+    mockRecordService.update.mockResolvedValue(updatedRecord);
 
-    const result = await recordController.findAll();
-    expect(result).toEqual(records);
-    expect(recordModel.find).toHaveBeenCalled();
+    const result = await recordController.update('1', updateDto);
+    expect(result).toEqual(updatedRecord);
+    expect(mockRecordService.update).toHaveBeenCalledWith('1', updateDto);
+  });
+
+  it('should delete a record', async () => {
+    mockRecordService.delete.mockResolvedValue(undefined);
+
+    await recordController.delete('1');
+    expect(mockRecordService.delete).toHaveBeenCalledWith('1');
   });
 });
